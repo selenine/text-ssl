@@ -13,8 +13,8 @@ model:
 train:
   lr: 3e-4
   n_warmup: 2000
-  n_batches: 100000
-  batch_size: 64
+  n_batches: 1000000
+  batch_size: 4096
   teacher_momentum: 0.992
   teacher_momentum_final: 1.0
   wt_decay: 0.05
@@ -28,7 +28,7 @@ train:
   teacher_temp_warmup: 0.04
   n_teacher_warmup: 30000
   grad_norm: 1.0
-  mixed_precision: fp8
+  mixed_precision: bf16
   save_every: 5000
   save_path: checkpoints/model.pt
   wandb_name: baseline

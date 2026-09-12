@@ -81,4 +81,7 @@ class DINOHead(nn.Module):
                     nn.init.zeros_(layer.bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.prototypes(F.normalize(self.mlp(x), dim=-1))
+        return F.linear(
+            F.normalize(self.mlp(x), dim=-1),
+            F.normalize(self.prototypes.weight, dim=-1),
+        )

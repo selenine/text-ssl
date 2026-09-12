@@ -11,6 +11,7 @@ from torch import optim
 from torch.optim import swa_utils
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 from transformers import AutoTokenizer
 
 from text_ssl.configs import TrainConfig
@@ -145,7 +146,13 @@ def train(
         accel.save(accel.unwrap_model(model).state_dict(), cfg.save_path)
 
     batches = get_batches()
-    for step in range(cfg.n_batches):
+    pbar = tqdm(
+        range(cfg.n_batches),
+        desc="train",
+        dynamic_ncols=True,
+        disable=not accel.is_local_main_process,
+    )
+    for step in pbar:
         batch = next(batches)
 
         seqs = torch.cat(get_seqs(batch))
@@ -189,10 +196,15 @@ def train(
             if grad_norm is not None:
                 metrics["train/grad_norm"] = grad_norm
             accel.log(metrics, step=step)
+            pbar.set_postfix(
+                loss=f"{metrics['train/loss']:.4f}",
+                lr=f"{metrics['train/lr']:.2e}",
+            )
 
         if cfg.save_every and (step + 1) % cfg.save_every == 0:
             save()
 
+    pbar.close()
     save()
 
     accel.end_training()
