@@ -57,3 +57,29 @@ class MLP(nn.Module):
         out = F.silu(out * gate) @ self.Wdown
 
         return x + out
+
+
+class DINOHead(nn.Module):
+    def __init__(
+        self,
+        cfg: TransformerConfig,
+    ) -> None:
+        super().__init__()
+
+        self.mlp = nn.Sequential(
+            nn.Linear(cfg.d_model, cfg.d_proj),
+            nn.GELU(),
+            nn.Linear(cfg.d_proj, cfg.d_proj),
+            nn.GELU(),
+            nn.Linear(cfg.d_proj, cfg.d_bottleneck),
+        )
+        self.prototypes = nn.Linear(cfg.d_bottleneck, cfg.d_reps, bias=False)
+
+        for layer in [*self.mlp, self.prototypes]:
+            if isinstance(layer, nn.Linear):
+                nn.init.trunc_normal_(layer.weight, std=0.02)
+                if layer.bias is not None:
+                    nn.init.zeros_(layer.bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.prototypes(F.normalize(self.mlp(x), dim=-1))

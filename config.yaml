@@ -6,6 +6,8 @@ model:
   d_model: 768
   d_head: 64
   d_mlp: 2048
+  d_proj: 2048
+  d_bottleneck: 256
   d_reps: 65536
 
 train:
@@ -13,10 +15,18 @@ train:
   n_warmup: 2000
   n_batches: 100000
   batch_size: 64
-  ema_wt: 0.996
+  teacher_momentum: 0.992
+  teacher_momentum_final: 1.0
   wt_decay: 0.05
   mask_wt: 1.0
   koleo_wt: 0.1
+  mask_prob: 0.5
+  mask_ratio_min: 0.1
+  mask_ratio_max: 0.5
+  student_temp: 0.1
+  teacher_temp: 0.07
+  teacher_temp_warmup: 0.04
+  n_teacher_warmup: 30000
   grad_norm: 1.0
   mixed_precision: bf16
   save_every: 5000

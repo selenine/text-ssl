@@ -6,14 +6,32 @@ from dataclasses import asdict
 import torch
 from accelerate import Accelerator
 from datasets import load_dataset
-from torch import nn, optim
+from torch import optim
 from torch.optim import swa_utils
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 
 from text_ssl.configs import TrainConfig
+from text_ssl.nn.loss import DINOLoss
 from text_ssl.nn.model import Transformer
+
+
+def get_masks(
+    n_seqs: int, n_ctx: int, cfg: TrainConfig
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    n_masked_seqs = int(n_seqs * cfg.mask_prob)
+    probs = torch.linspace(cfg.mask_ratio_min, cfg.mask_ratio_max, n_masked_seqs + 1)
+    counts = [int(n_ctx * p) for p in probs[1:]] + [0] * (n_seqs - n_masked_seqs)
+    random.shuffle(counts)
+
+    ranks = torch.rand(n_seqs, n_ctx).argsort(dim=1).argsort(dim=1)
+    mask = ranks < torch.tensor(counts)[:, None]
+
+    idx = mask.flatten().nonzero().flatten()
+    weights = (1 / mask.sum(dim=-1).clamp(min=1))[:, None].expand_as(mask)[mask]
+
+    return mask, idx, weights
 
 
 def train(
@@ -29,6 +47,7 @@ def train(
     n_ctx = model.cfg.n_ctx
 
     tokenizer = AutoTokenizer.from_pretrained("answerdotai/ModernBERT-base")
+    mask_token_id = tokenizer.mask_token_id
 
     dataset = (
         load_dataset("Skylion007/openwebtext", split="train", streaming=True)
@@ -63,19 +82,34 @@ def train(
 
     scheduler = LambdaLR(optimizer, lr_lambda=lr_lambda)
 
+    criterion = DINOLoss(cfg.student_temp)
+
+    def teacher_temp(step: int) -> float:
+        if step >= cfg.n_teacher_warmup:
+            return cfg.teacher_temp
+
+        progress = step / max(cfg.n_teacher_warmup, 1)
+
+        return cfg.teacher_temp_warmup + progress * (cfg.teacher_temp - cfg.teacher_temp_warmup)
+
+    def teacher_momentum(step: int) -> float:
+        progress = min(step / max(cfg.n_batches, 1), 1.0)
+        start, end = cfg.teacher_momentum, cfg.teacher_momentum_final
+
+        return end + 0.5 * (start - end) * (1.0 + math.cos(math.pi * progress))
+
     model, dataloader, optimizer, scheduler = accel.prepare(
         model, dataloader, optimizer, scheduler
     )
 
-    teacher = swa_utils.AveragedModel(
-        accel.unwrap_model(model),
-        multi_avg_fn=swa_utils.get_ema_multi_avg_fn(cfg.ema_wt),
-        use_buffers=True,
-    )
+    def ema_avg(
+        t_params: list[torch.Tensor], s_params: list[torch.Tensor], n_averaged: torch.Tensor
+    ) -> None:
+        torch._foreach_lerp_(t_params, s_params, 1.0 - teacher_momentum(n_averaged.item()))
+
+    teacher = swa_utils.AveragedModel(accel.unwrap_model(model), multi_avg_fn=ema_avg)
     teacher.requires_grad_(False)
     teacher.eval()
-
-    criterion = nn.MSELoss()
 
     def get_batches():
         while True:
@@ -103,13 +137,23 @@ def train(
     for step in range(cfg.n_batches):
         batch = next(batches)
 
-        seq1, seq2 = get_seqs(batch)
+        seqs = torch.cat(get_seqs(batch))
 
-        pred = model(seq1)
+        mask, idx, weights = (
+            t.to(accel.device) for t in get_masks(seqs.size(0), n_ctx, cfg)
+        )
+        masked = seqs.masked_fill(mask, mask_token_id)
+
+        student_out = model(masked, idx)
         with torch.no_grad(), accel.autocast():
-            ref = teacher(seq2)
+            teacher_out = teacher(seqs, idx)
 
-        loss = criterion(pred, ref)
+        losses = criterion(student_out, teacher_out, teacher_temp(step), weights)
+        loss = (
+            losses["dino"]
+            + cfg.mask_wt * losses["ibot"]
+            + cfg.koleo_wt * losses["koleo"]
+        )
         accel.backward(loss)
 
         grad_norm = None
@@ -125,7 +169,10 @@ def train(
         if step % cfg.log_every == 0:
             metrics = {
                 "train/loss": loss.item(),
+                **{f"train/{k}_loss": v.item() for k, v in losses.items()},
                 "train/lr": scheduler.get_last_lr()[0],
+                "train/teacher_temp": teacher_temp(step),
+                "train/teacher_momentum": teacher_momentum(step),
                 "train/samples": (step + 1) * cfg.batch_size * accel.num_processes,
             }
             if grad_norm is not None:

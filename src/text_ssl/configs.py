@@ -15,6 +15,8 @@ class TransformerConfig:
     d_model: int
     d_head: int
     d_mlp: int
+    d_proj: int
+    d_bottleneck: int
     d_reps: int
 
 
@@ -24,10 +26,18 @@ class TrainConfig:
     n_warmup: int
     n_batches: int
     batch_size: int
-    ema_wt: float
+    teacher_momentum: float
+    teacher_momentum_final: float
     wt_decay: float
     mask_wt: float
     koleo_wt: float
+    mask_prob: float
+    mask_ratio_min: float
+    mask_ratio_max: float
+    student_temp: float
+    teacher_temp: float
+    teacher_temp_warmup: float
+    n_teacher_warmup: int
     grad_norm: float
     mixed_precision: str
     save_every: int

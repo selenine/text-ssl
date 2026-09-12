@@ -2,7 +2,7 @@ import torch
 from torch import nn
 
 from text_ssl.configs import TransformerConfig
-from text_ssl.nn.layers import MHSA, MLP
+from text_ssl.nn.layers import MHSA, MLP, DINOHead
 
 
 class Transformer(nn.Module):
@@ -17,13 +17,11 @@ class Transformer(nn.Module):
 
         self.cfg = cfg
 
-        lerp = (cfg.d_model + cfg.d_reps) // 2
-
         self.embedding = nn.Embedding(cfg.n_vocab, cfg.d_model)
         self.pos_embed = nn.Embedding(cfg.n_ctx, cfg.d_model)
-        self.latents = nn.Sequential(
-            nn.Linear(cfg.d_model, lerp), nn.SiLU(), nn.Linear(lerp, 65536)
-        )
+        self.cls_token = nn.Parameter(torch.randn(1, 1, cfg.d_model) * 0.02)
+        self.dino_head = DINOHead(cfg)
+        self.ibot_head = DINOHead(cfg)
         self.register_buffer(
             "positions", torch.arange(cfg.n_ctx).unsqueeze(0), persistent=False
         )
@@ -36,10 +34,14 @@ class Transformer(nn.Module):
             self.core.append(MLP(cfg))
 
     @torch.compile
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, idx: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         x = self.embedding(x) + self.pos_embed(self.positions[:, : x.size(1)])
+        x = torch.cat([self.cls_token.expand(x.size(0), -1, -1), x], dim=1)
         for layer in self.core:
             x = layer(x)
-        x = self.latents(x)
 
-        return x
+        cls, toks = x[:, 0], x[:, 1:].flatten(0, 1).index_select(0, idx)
+
+        return cls, self.dino_head(cls), self.ibot_head(toks)
