@@ -6,6 +6,5 @@ This is an experimental repo that I created to probe what would happen if I trie
 
 ```bash
 uv sync
-uv run accelerate config --config_file accelerate.yaml # config.yaml is used by the repo itself
-uv run accelerate launch --config_file accelerate.yaml -m text_ssl.cli # train
+uv run accelerate launch --config_file accelerate.yaml -m text_ssl.cli
 ```
