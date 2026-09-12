@@ -5,6 +5,7 @@ from dataclasses import asdict
 
 import torch
 from accelerate import Accelerator
+from accelerate.utils import AORecipeKwargs
 from datasets import load_dataset
 from torch import optim
 from torch.optim import swa_utils
@@ -38,7 +39,17 @@ def train(
     model: Transformer,
     cfg: TrainConfig,
 ) -> None:
-    accel = Accelerator(mixed_precision=cfg.mixed_precision, log_with="wandb")
+    kwargs_handlers = []
+    if cfg.mixed_precision == "fp8":
+        kwargs_handlers.append(
+            AORecipeKwargs(module_filter_func=lambda _, fqn: fqn.startswith("core."))
+        )
+
+    accel = Accelerator(
+        mixed_precision=cfg.mixed_precision,
+        log_with="wandb",
+        kwargs_handlers=kwargs_handlers,
+    )
     accel.init_trackers(
         project_name="text-ssl",
         config={"train": asdict(cfg), "model": asdict(model.cfg)},

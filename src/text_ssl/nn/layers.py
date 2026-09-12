@@ -14,23 +14,22 @@ class MHSA(nn.Module):
 
         self.cfg = cfg
 
-        self.WQ = nn.Parameter(torch.zeros(cfg.d_model, cfg.n_heads * cfg.d_head))
-        self.WK = nn.Parameter(torch.zeros(cfg.d_model, cfg.n_heads * cfg.d_head))
-        self.WV = nn.Parameter(torch.zeros(cfg.d_model, cfg.n_heads * cfg.d_head))
-        self.WO = nn.Parameter(torch.zeros(cfg.n_heads * cfg.d_head, cfg.d_model))
+        self.WQ = nn.Linear(cfg.d_model, cfg.n_heads * cfg.d_head, bias=False)
+        self.WK = nn.Linear(cfg.d_model, cfg.n_heads * cfg.d_head, bias=False)
+        self.WV = nn.Linear(cfg.d_model, cfg.n_heads * cfg.d_head, bias=False)
+        self.WO = nn.Linear(cfg.n_heads * cfg.d_head, cfg.d_model, bias=False)
 
         for layer in [self.WQ, self.WK, self.WV, self.WO]:
-            nn.init.kaiming_normal_(layer)
+            nn.init.kaiming_normal_(layer.weight)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         (b, s, _), n, d = x.shape, self.cfg.n_heads, self.cfg.d_head
-        q = (x @ self.WQ).view(b, s, n, d).transpose(1, 2)
-        k = (x @ self.WK).view(b, s, n, d).transpose(1, 2)
-        v = (x @ self.WV).view(b, s, n, d).transpose(1, 2)
+        q = self.WQ(x).view(b, s, n, d).transpose(1, 2)
+        k = self.WK(x).view(b, s, n, d).transpose(1, 2)
+        v = self.WV(x).view(b, s, n, d).transpose(1, 2)
 
-        out = (
+        out = self.WO(
             F.scaled_dot_product_attention(q, k, v).transpose(1, 2).reshape(b, s, n * d)
-            @ self.WO
         )
 
         return out + x
@@ -45,16 +44,16 @@ class MLP(nn.Module):
 
         self.cfg = cfg
 
-        self.Wup = nn.Parameter(torch.zeros(cfg.d_model, cfg.d_mlp))
-        self.Wgate = nn.Parameter(torch.zeros(cfg.d_model, cfg.d_mlp))
-        self.Wdown = nn.Parameter(torch.zeros(cfg.d_mlp, cfg.d_model))
+        self.Wup = nn.Linear(cfg.d_model, cfg.d_mlp, bias=False)
+        self.Wgate = nn.Linear(cfg.d_model, cfg.d_mlp, bias=False)
+        self.Wdown = nn.Linear(cfg.d_mlp, cfg.d_model, bias=False)
 
         for layer in [self.Wup, self.Wgate, self.Wdown]:
-            nn.init.kaiming_normal_(layer)
+            nn.init.kaiming_normal_(layer.weight)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        out, gate = x @ self.Wup, x @ self.Wgate
-        out = F.silu(out * gate) @ self.Wdown
+        out, gate = self.Wup(x), self.Wgate(x)
+        out = self.Wdown(F.silu(out * gate))
 
         return x + out
 
