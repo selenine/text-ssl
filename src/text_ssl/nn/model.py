@@ -17,10 +17,13 @@ class Transformer(nn.Module):
 
         self.cfg = cfg
 
+        lerp = (cfg.d_model + cfg.d_reps) // 2
+
         self.embedding = nn.Embedding(cfg.n_vocab, cfg.d_model)
         self.pos_embed = nn.Embedding(cfg.n_ctx, cfg.d_model)
-        self.latents = nn.Linear(cfg.d_model, 65536)
-
+        self.latents = nn.Sequential(
+            nn.Linear(cfg.d_model, lerp), nn.SiLU(), nn.Linear(lerp, 65536)
+        )
         self.register_buffer(
             "positions", torch.arange(cfg.n_ctx).unsqueeze(0), persistent=False
         )

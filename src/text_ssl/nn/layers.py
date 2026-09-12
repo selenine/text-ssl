@@ -52,10 +52,8 @@ class MLP(nn.Module):
         for layer in [self.Wup, self.Wgate, self.Wdown]:
             nn.init.kaiming_normal_(layer)
 
-        self.act_fn = nn.SiLU()
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         out, gate = x @ self.Wup, x @ self.Wgate
-        out = self.act_fn(out * gate) @ self.Wdown
+        out = F.silu(out * gate) @ self.Wdown
 
         return x + out

@@ -6,6 +6,7 @@ model:
   d_model: 768
   d_head: 64
   d_mlp: 2048
+  d_reps: 65536
 
 train:
   lr: 3e-4

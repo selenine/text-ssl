@@ -15,6 +15,7 @@ class TransformerConfig:
     d_model: int
     d_head: int
     d_mlp: int
+    d_reps: int
 
 
 @dataclass
