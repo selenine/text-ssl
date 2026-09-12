@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from src.text_ssl.utils.configs import TransformerConfig
+from text_ssl.configs import TransformerConfig
 
 
 class MHSA(nn.Module):
@@ -10,6 +10,8 @@ class MHSA(nn.Module):
         self,
         cfg: TransformerConfig,
     ) -> None:
+        super().__init__()
+
         self.cfg = cfg
 
         self.WQ = nn.Parameter(torch.zeros(cfg.d_model, cfg.n_heads * cfg.d_head))
@@ -20,20 +22,16 @@ class MHSA(nn.Module):
         for layer in [self.WQ, self.WK, self.WV, self.WO]:
             nn.init.kaiming_normal_(layer)
 
-        super().__init__()
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        (b, s, d), n = x.shape, self.cfg.n_heads
-        q = (x @ self.WQ).view(b, s, n, d)
-        k = (x @ self.WK).view(b, s, n, d)
-        v = (x @ self.WV).view(b, s, n, d)
+        (b, s, _), n, d = x.shape, self.cfg.n_heads, self.cfg.d_head
+        q = (x @ self.WQ).view(b, s, n, d).transpose(1, 2)
+        k = (x @ self.WK).view(b, s, n, d).transpose(1, 2)
+        v = (x @ self.WV).view(b, s, n, d).transpose(1, 2)
 
-        pre = []
-        for i in range(n):
-            pre.append(F.softmax(q[:, :, i] @ k[:, :, i].T) @ v[:, :, i])
-
-        pre = torch.tensor(pre).view(b, s, n * d)
-        out = pre @ self.WO
+        out = (
+            F.scaled_dot_product_attention(q, k, v).transpose(1, 2).reshape(b, s, n * d)
+            @ self.WO
+        )
 
         return out + x
 
@@ -43,6 +41,8 @@ class MLP(nn.Module):
         self,
         cfg: TransformerConfig,
     ) -> None:
+        super().__init__()
+
         self.cfg = cfg
 
         self.Wup = nn.Parameter(torch.zeros(cfg.d_model, cfg.d_mlp))
@@ -53,8 +53,6 @@ class MLP(nn.Module):
             nn.init.kaiming_normal_(layer)
 
         self.act_fn = nn.SiLU()
-
-        super().__init__()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         out, gate = x @ self.Wup, x @ self.Wgate

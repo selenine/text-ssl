@@ -1,0 +1,24 @@
+model:
+  n_ctx: 512
+  n_vocab: 50368
+  n_layers: 12
+  n_heads: 12
+  d_model: 768
+  d_head: 64
+  d_mlp: 2048
+
+train:
+  lr: 3e-4
+  n_warmup: 2000
+  n_batches: 100000
+  batch_size: 64
+  ema_wt: 0.996
+  wt_decay: 0.05
+  mask_wt: 1.0
+  koleo_wt: 0.1
+  grad_norm: 1.0
+  mixed_precision: bf16
+  save_every: 5000
+  save_path: checkpoints/model.pt
+  wandb_name: baseline
+  log_every: 50
