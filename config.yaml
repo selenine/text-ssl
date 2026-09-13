@@ -14,7 +14,7 @@ train:
   lr: 3e-4
   n_warmup: 2000
   n_batches: 1000000
-  batch_size: 4096
+  batch_size: 1024
   teacher_momentum: 0.992
   teacher_momentum_final: 1.0
   wt_decay: 0.05
